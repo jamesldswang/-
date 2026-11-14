@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>刺蝟養成記</title>
+<style>
+:root{--bg:#f6efe4;--card:#fffaf2;--ink:#4a3a2a;--muted:#8a7865;--accent:#d9824b;--line:#e6d8c4;--track:#eee3d3}
+@media (prefers-color-scheme: dark){:root{--bg:#211c18;--card:#2d2620;--ink:#f1e6d6;--muted:#b3a18c;--accent:#e8955a;--line:#43392f;--track:#3b3229}}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Microsoft JhengHei","PingFang TC","Noto Sans TC",system-ui,sans-serif;background:var(--bg);color:var(--ink);display:flex;justify-content:center;padding:16px}
+.app{width:100%;max-width:780px}
+header{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+h1{font-size:22px;margin:0}
+.sub{color:var(--muted);font-size:14px;margin-top:2px}
+.clock{font-size:15px;color:var(--muted);text-align:right}
+canvas{width:100%;aspect-ratio:760/380;display:block;border-radius:16px;border:2px solid var(--line);cursor:pointer;background:#f5e6cf}
+.growth{margin:12px 0 4px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:14px}
+.growth .bar{height:12px}
+.growth .bar i{background:linear-gradient(90deg,#e8a15f,#d9824b)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin:8px 0 12px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13px}
+.stat b{float:right;font-weight:600}
+.bar{height:8px;background:var(--track);border-radius:6px;overflow:hidden;margin-top:6px}
+.bar i{display:block;height:100%;width:0;transition:width .3s,background .3s}
+.actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px}
+button{font:inherit;font-size:15px;padding:10px 6px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+button:hover:not(:disabled){border-color:var(--accent);filter:brightness(1.04)}
+button:disabled{opacity:.4;cursor:not-allowed}
+.log{margin-top:12px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:6px 12px;height:140px;overflow:auto;font-size:13px}
+.log div{padding:3px 0;border-bottom:1px dashed var(--line)}
+.log span{color:var(--muted);margin-right:6px}
+.foot{display:flex;justify-content:space-between;margin-top:10px;font-size:12px;color:var(--muted)}
+.foot button{font-size:12px;padding:4px 10px}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;padding:16px}
+.modal.show{display:flex}
+.box{background:var(--card);border-radius:14px;padding:20px;max-width:340px;width:100%;text-align:center}
+.box input{font:inherit;font-size:16px;width:100%;padding:8px 10px;margin:12px 0;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div><h1 id="title">🦔 刺蝟養成記</h1><div class="sub" id="sub"></div></div>
+    <div class="clock" id="clock"></div>
+  </header>
+  <canvas id="cv" title="點刺蝟可以摸摸，點便便可以清掉"></canvas>
+  <div class="growth">🌱 成長進度 <b id="gtxt" style="float:right"></b><div class="bar"><i id="gbar"></i></div></div>
+  <div class="stats" id="stats"></div>
+  <div class="actions">
+    <button id="bWorm">🐛 麵包蟲</button>
+    <button id="bKibble">🥣 刺蝟飼料</button>
+    <button id="bApple">🍎 蘋果丁</button>
+    <button id="bPlay">🎡 跑滾輪</button>
+    <button id="bPet">🤚 摸摸</button>
+    <button id="bBath">🛁 洗澡</button>
+    <button id="bPoop">🧹 清便便</button>
+    <button id="bSleep">💤 睡覺</button>
+    <button id="bDoc">💊 看醫生</button>
+  </div>
+  <div class="log" id="log"></div>
+  <div class="foot"><span>刺蝟是夜行性動物：晚上玩耍更開心，白天睡覺恢復更快。進度會自動存檔。</span><button id="bReset">重新開始</button></div>
+</div>
+<div class="modal" id="modal"><div class="box">
+  <div style="font-size:40px">🦔</div>
+  <div>一隻刺蝟寶寶來到你家了！<br>幫牠取個名字吧：</div>
+  <input id="nameIn" maxlength="10" placeholder="例如：小刺">
+  <button id="nameOk" style="width:100%">就叫這個名字</button>
+</div></div>
+<script>
+const $=s=>document.querySelector(s);
+const cv=$('#cv'),ctx=cv.getContext('2d');
+const W=760,H=380,FLOOR=292;
+function fit(){const d=Math.min(2,window.devicePixelRatio||1);cv.width=W*d;cv.height=H*d;ctx.setTransform(d,0,0,d,0,0)}
+fit();
+
+const SAVE='hedgehog-save-v1';
+const SEC_PER_DAY=240; // 真實 4 分鐘 = 遊戲 1 天
+const STAGES=[
+  {name:'刺蝟寶寶',need:0,scale:.55},
+  {name:'幼年刺蝟',need:120,scale:.72},
+  {name:'少年刺蝟',need:340,scale:.88},
+  {name:'成年刺蝟',need:700,scale:1.05},
+];
+const PAL=[
+  {spike:'#d6bc9f',spike2:'#ecdac4'},
+  {spike:'#b08d6c',spike2:'#d0b496'},
+  {spike:'#86664c',spike2:'#aa896b'},
+  {spike:'#5a4334',spike2:'#87694f'},
+];
+const SKIN='#f3dcc0',BELLY='#f8e8d2',FEET='#e3a68c',EAR='#e0b08f';
+const DEFAULT={name:'',hunger:75,happy:75,clean:90,energy:80,health:100,growth:0,stage:0,gameMin:20*60,
+  sleeping:false,poops:[],poopIn:0,ageSec:0,last:Date.now(),meals:0,pets:0};
+let S;
+try{const raw=localStorage.getItem(SAVE);if(raw)S=Object.assign({},DEFAULT,JSON.parse(raw))}catch(e){}
+if(!S)S=JSON.parse(JSON.stringify(DEFAULT));
+function save(){S.last=Date.now();try{localStorage.setItem(SAVE,JSON.stringify(S))}catch(e){}}
+
+const clamp=v=>Math.max(0,Math.min(100,v));
+const hour=()=>S.gameMin/60;
+const isNight=()=>{const h=hour();return h>=19||h<6};
+function daylight(){const h=hour();if(h>=8&&h<17)return 1;if(h>=20||h<5)return 0;return h<8?(h-5)/3:1-(h-17)/3}
+const timeStr=()=>{const m=Math.floor(S.gameMin);return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0')};
+
+// ---------- runtime (not saved) ----------
+const hog={x:380,dir:1,tx:380,mode:'walk',modeT:0,scale:STAGES[S.stage].scale,wait:0,step:0,say:null,sayT:0};
+let parts=[],wheelA=0,cool={},chatT=6,banner=null;
+const bedding=Array.from({length:140},()=>({x:Math.random()*W,y:FLOOR+6+Math.random()*(H-FLOOR-10),r:1+Math.random()*2.5,c:Math.random()}));
+
+function log(msg){const d=document.createElement('div');d.innerHTML=`<span>${timeStr()}</span>${msg}`;const L=$('#log');L.prepend(d);while(L.children.length>60)L.lastChild.remove()}
+function say(t,dur=2.5){hog.say=t;hog.sayT=dur}
+function burst(emoji,n,x,y,spread=40){for(let i=0;i<n;i++)parts.push({e:emoji,x:x+(Math.random()-.5)*spread,y:y+(Math.random()-.5)*spread*.5,vx:(Math.random()-.5)*40,vy:-30-Math.random()*50,life:1.2+Math.random()*.6,size:16+Math.random()*10})}
+const hogTop=()=>FLOOR+8-100*hog.scale;
+
+// ---------- simulation ----------
+function tick(dt,offline=false){
+  const k=offline?.5:1;
+  S.gameMin=(S.gameMin+dt*(1440/SEC_PER_DAY))%1440;
+  S.ageSec+=dt;
+  if(S.sleeping){
+    S.energy+=(isNight()?.45:.7)*dt;S.hunger-=.05*dt*k;S.happy-=.015*dt*k;
+    if(S.energy>=100){S.energy=100;S.sleeping=false;if(!offline){say('睡飽了！伸懶腰～');}log(`${S.name} 睡飽醒來了`)}
+  }else{
+    S.energy-=.055*dt*k;S.hunger-=.12*dt*k;S.happy-=(isNight()?.1:.07)*dt*k;
+    if(S.energy<=0){S.energy=0;S.sleeping=true;log(`${S.name} 累到直接倒頭就睡…`)}
+  }
+  S.clean-=(.045+.05*S.poops.length)*dt*k;
+  if(S.poopIn>0){S.poopIn-=dt;if(S.poopIn<=0){S.poopIn=0;if(S.poops.length<6){S.poops.push({x:170+Math.random()*420,y:FLOOR+14+Math.random()*50});if(!offline)log(`${S.name} 大了一坨便便 💩`)}}}
+  if(S.hunger<15||S.clean<15||S.happy<10)S.health-=.15*dt*k;
+  else if(S.hunger>50&&S.clean>50&&S.happy>40)S.health+=.06*dt;
+  for(const key of['hunger','happy','clean','energy','health'])S[key]=clamp(S[key]);
+  if(S.stage<STAGES.length-1){
+    let f=(S.hunger+S.happy+S.clean+S.energy)/400;
+    if(Math.min(S.hunger,S.happy,S.clean)<20)f=.15;
+    if(S.health<40)f*=.3;
+    if(S.sleeping)f*=1.3;
+    S.growth+=.45*f*dt*(offline?.6:1);
+    if(S.growth>=STAGES[S.stage+1].need){S.stage++;onGrow(offline)}
+  }
+}
+function onGrow(offline){
+  const st=STAGES[S.stage];
+  log(`🎉 <b>${S.name} 長大了！變成「${st.name}」</b>`);
+  if(offline)return;
+  banner={t:`${S.name} 長大成${st.name}了！`,life:4};
+  for(const e of['🎉','✨','⭐','🎊'])burst(e,8,hog.x,hogTop(),160);
+  say(S.stage===3?'我已經是大刺蝟了！':'我長大了耶！',4);
+}
+
+// ---------- actions ----------
+const FOODS={worm:{n:'麵包蟲',h:12,p:14,e:'🐛'},kibble:{n:'刺蝟飼料',h:30,p:4,e:'🥣'},apple:{n:'蘋果丁',h:10,p:7,hp:6,e:'🍎'}};
+const ready=(k)=>!(cool[k]>performance.now());
+const setCool=(k,s)=>cool[k]=performance.now()+s*1000;
+function feed(k){
+  const f=FOODS[k];
+  if(S.hunger>95)return say('吃不下了…嗝');
+  S.hunger=clamp(S.hunger+f.h);S.happy=clamp(S.happy+f.p);if(f.hp)S.health=clamp(S.health+f.hp);
+  S.meals++;
+  if(k==='worm'&&S.hunger>90){S.health=clamp(S.health-3);log(`麵包蟲吃太多會胖喔！`)}
+  if(!S.poopIn&&Math.random()<.6)S.poopIn=12+Math.random()*18;
+  hog.mode='eat';hog.modeT=2;hog.x=470;hog.dir=1;hog.tx=470;
+  burst(f.e,4,560,FLOOR-10,30);
+  say(k==='worm'?'好香的蟲蟲！':k==='apple'?'甜甜的～':'咔滋咔滋');
+  log(`餵 ${S.name} 吃了${f.n}`);setCool('feed',1.5);
+}
+function play(){
+  if(S.energy<15)return say('好累…跑不動');
+  const bonus=isNight()?8:0;
+  S.energy=clamp(S.energy-15);S.happy=clamp(S.happy+20+bonus);S.hunger=clamp(S.hunger-5);
+  hog.mode='wheel';hog.modeT=4;
+  say(bonus?'晚上跑最爽啦！':'衝衝衝～');log(`${S.name} 在滾輪上跑了一陣子${bonus?'（夜貓子加成 ✨）':''}`);setCool('play',4);
+}
+function pet(){
+  if(S.sleeping){say('Zzz…');return}
+  if(hog.mode==='curl')return;
+  if(S.happy<30&&Math.random()<.6){
+    hog.mode='curl';hog.modeT=3;S.happy=clamp(S.happy+2);burst('💢',2,hog.x,hogTop(),30);
+    say('呼！（哈氣縮成球）');log(`${S.name} 心情不好，縮成一顆刺球…`);
+  }else{
+    S.happy=clamp(S.happy+8);S.pets++;burst('❤️',4,hog.x,hogTop(),50);
+    say(['咕嚕咕嚕～','好舒服～','再摸一下！','嘿嘿'][Math.floor(Math.random()*4)]);
+  }
+  setCool('pet',.8);
+}
+function bath(){
+  if(S.clean>85)return say('我已經很乾淨了啦');
+  S.clean=100;S.happy=clamp(S.happy-6);
+  hog.mode='curl';hog.modeT=2.5;burst('🫧',14,hog.x,hogTop()+20,120);
+  say('濕答答…');log(`幫 ${S.name} 洗了個澡，香噴噴的`);setCool('bath',5);
+}
+function cleanPoop(i){
+  const n=i===undefined?S.poops.length:1;
+  if(!n)return;
+  if(i===undefined)S.poops=[];else S.poops.splice(i,1);
+  S.clean=clamp(S.clean+5*n);burst('✨',3*n,W/2,FLOOR+30,300);
+  log(`清掉了 ${n} 坨便便`);
+}
+function toggleSleep(){
+  if(S.sleeping){S.sleeping=false;if(S.energy<50){S.happy=clamp(S.happy-5);say('被吵醒了…哼');}else say('早安～');log(`把 ${S.name} 叫醒了`)}
+  else{if(S.energy>90)return say('還不睏！');S.sleeping=true;log(`${S.name} 窩起來睡覺了 💤`)}
+}
+function doctor(){
+  S.health=clamp(S.health+40);S.happy=clamp(S.happy-10);
+  hog.mode='curl';hog.modeT=2;burst('💊',3,hog.x,hogTop(),40);
+  say('打針好痛…');log(`帶 ${S.name} 看了醫生，健康恢復了`);setCool('doc',10);
+}
+const busy=()=>S.sleeping||hog.mode==='wheel'||hog.mode==='eat';
+$('#bWorm').onclick=()=>feed('worm');
+$('#bKibble').onclick=()=>feed('kibble');
+$('#bApple').onclick=()=>feed('apple');
+$('#bPlay').onclick=play;
+$('#bPet').onclick=pet;
+$('#bBath').onclick=bath;
+$('#bPoop').onclick=()=>cleanPoop();
+$('#bSleep').onclick=toggleSleep;
+$('#bDoc').onclick=doctor;
+$('#bReset').onclick=()=>{if(confirm('確定要重新開始嗎？目前的刺蝟會消失喔')){try{localStorage.removeItem(SAVE)}catch(e){}location.reload()}};
+cv.addEventListener('click',ev=>{
+  const r=cv.getBoundingClientRect(),x=(ev.clientX-r.left)*W/r.width,y=(ev.clientY-r.top)*H/r.height;
+  for(let i=0;i<S.poops.length;i++){const p=S.poops[i];if(Math.hypot(x-p.x,y-p.y)<18){cleanPoop(i);return}}
+  const cy=FLOOR+8-45*hog.scale;
+  if(Math.hypot(x-hog.x,(y-cy)*1.3)<85*hog.scale&&ready('pet')&&!busy())pet();
+});
+
+// ---------- stats UI ----------
+const STAT_DEF=[['hunger','🍽️ 飽足'],['happy','😊 心情'],['clean','🫧 清潔'],['energy','⚡ 體力'],['health','❤️ 健康']];
+$('#stats').innerHTML=STAT_DEF.map(([k,l])=>`<div class="stat">${l}<b id="v_${k}"></b><div class="bar"><i id="b_${k}"></i></div></div>`).join('');
+function mood(){
+  if(S.sleeping)return'睡得很香 💤';
+  if(S.health<40)return'生病了，快帶去看醫生！';
+  if(S.hunger<25)return'肚子餓扁了';
+  if(S.clean<25)return'髒兮兮的';
+  if(S.energy<20)return'好睏';
+  if(S.happy<30)return'有點無聊、不開心';
+  if(S.happy>80&&S.hunger>60)return'超級開心！';
+  return'心情不錯';
+}
+function updateUI(){
+  for(const[k]of STAT_DEF){const v=S[k];$('#v_'+k).textContent=Math.round(v);const b=$('#b_'+k);b.style.width=v+'%';b.style.background=v<25?'#e0645a':v<50?'#e8b54a':'#7bbf6a'}
+  const st=STAGES[S.stage],nx=STAGES[S.stage+1];
+  if(nx){const p=(S.growth-st.need)/(nx.need-st.need);$('#gbar').style.width=Math.min(100,p*100)+'%';$('#gtxt').textContent=`${st.name} → ${nx.name}　${Math.floor(p*100)}%`}
+  else{$('#gbar').style.width='100%';$('#gtxt').textContent='已經完全長大了 🏆'}
+  const days=Math.floor(S.ageSec/SEC_PER_DAY);
+  $('#title').textContent=`🦔 ${S.name||'刺蝟'} 的小窩`;
+  $('#sub').textContent=`${st.name}・${days} 天大・${mood()}`;
+  $('#clock').innerHTML=`${isNight()?'🌙 夜晚':'☀️ 白天'}　${timeStr()}<br>餵食 ${S.meals} 次・摸摸 ${S.pets} 次`;
+  const b=busy();
+  for(const id of['bWorm','bKibble','bApple'])$('#'+id).disabled=b||!ready('feed');
+  $('#bPlay').disabled=b||!ready('play');
+  $('#bPet').disabled=b||!ready('pet');
+  $('#bBath').disabled=b||!ready('bath');
+  $('#bPoop').disabled=!S.poops.length;
+  $('#bSleep').textContent=S.sleeping?'☀️ 叫醒':'💤 睡覺';
+  $('#bSleep').disabled=hog.mode==='wheel'||hog.mode==='eat';
+  $('#bDoc').disabled=S.health>=60||!ready('doc')||S.sleeping;
+}
+
+// ---------- drawing ----------
+const mix=(a,b,t)=>{const p=s=>[1,3,5].map(i=>parseInt(s.slice(i,i+2),16));const A=p(a),B=p(b);return`rgb(${A.map((v,i)=>Math.round(v+(B[i]-v)*t)).join(',')})`};
+function ell(x,y,rx,ry){ctx.beginPath();ctx.ellipse(x,y,rx,ry,0,0,Math.PI*2);ctx.fill()}
+function spikes(cx,cy,rx,ry,a0,a1,n,len){
+  ctx.beginPath();
+  for(let i=0;i<=n;i++){const a=a0+(a1-a0)*i/n,r=i%2?1:1-len;ctx.lineTo(cx+Math.cos(a)*rx*r,cy+Math.sin(a)*ry*r)}
+  ctx.lineTo(cx,cy);ctx.closePath();ctx.fill();
+}
+function drawHog(x,y,s,dir,o){
+  const P=PAL[S.stage];
+  ctx.save();ctx.translate(x,y);ctx.scale(s*dir,s);
+  if(o.curl){
+    const br=o.sleep?1+Math.sin(o.t*2)*.03:1;
+    ctx.scale(br,1/br);
+    ctx.fillStyle=P.spike;spikes(0,-50,64,56,0,Math.PI*2,52,.26);
+    ctx.fillStyle=P.spike2;spikes(0,-50,52,45,.06,Math.PI*2+.06,48,.28);
+    ctx.fillStyle=SKIN;ell(30,-26,18,13);
+    ctx.fillStyle='#3a2a22';ell(46,-27,5,5);
+    ctx.strokeStyle='#3a2a22';ctx.lineWidth=2.5;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(26,-31);ctx.lineTo(34,-30);ctx.stroke();
+    ctx.restore();return;
+  }
+  const bob=o.walk?Math.abs(Math.sin(o.step))*3:0;ctx.translate(0,-bob);
+  const f=o.walk?Math.sin(o.step)*7:0;
+  ctx.fillStyle=FEET;ell(-30+f,-3,11,6);ell(32-f,-3,11,6);
+  ctx.fillStyle=BELLY;ell(2,-30,66,28);
+  ctx.fillStyle=P.spike;spikes(-8,-36,84,62,Math.PI*.9,Math.PI*1.86,42,.24);
+  ctx.fillStyle=P.spike2;spikes(-10,-36,70,50,Math.PI*.93,Math.PI*1.84,38,.26);
+  ctx.fillStyle=EAR;ell(36,-54,8,9);
+  ctx.fillStyle=SKIN;ell(46,-30,30,24);ell(70,-24,20,12);
+  ctx.fillStyle='#3a2a22';ell(89,-25,6.5,6);
+  const big=S.stage===0?1.25:1;
+  ctx.strokeStyle='#2b201a';ctx.lineWidth=2.5;ctx.lineCap='round';
+  if(o.happy){ctx.beginPath();ctx.arc(54,-34,5*big,Math.PI*1.1,Math.PI*1.9);ctx.stroke()}
+  else if(o.sad){ctx.fillStyle='#2b201a';ell(54,-35,4.5*big,4.5*big);ctx.beginPath();ctx.moveTo(47,-45);ctx.lineTo(58,-43);ctx.stroke()}
+  else{ctx.fillStyle='#2b201a';ell(54,-35,5*big,5.5*big);ctx.fillStyle='#fff';ell(55.5*1,-37,1.8*big,1.8*big)}
+  if(o.happy||S.stage===0){ctx.fillStyle='rgba(240,130,130,.45)';ell(58,-22,7,4)}
+  if(o.chew){ctx.fillStyle='#2b201a';ell(76,-15,3,2+Math.abs(Math.sin(o.t*12))*2)}
+  ctx.restore();
+}
+function drawScene(t){
+  const dl=daylight();
+  // wall
+  ctx.fillStyle=mix('#4a4566','#f5e6cf',dl);ctx.fillRect(0,0,W,FLOOR);
+  // window
+  const wx=300,wy=34,ww=160,wh=110;
+  const g=ctx.createLinearGradient(0,wy,0,wy+wh);g.addColorStop(0,mix('#141a38','#8fd0f0',dl));g.addColorStop(1,mix('#2c2c55','#d6effa',dl));
+  ctx.fillStyle=g;ctx.fillRect(wx,wy,ww,wh);
+  if(dl>.3){ctx.fillStyle='#ffd65a';ctx.globalAlpha=dl;ell(wx+115,wy+35,16,16);ctx.globalAlpha=1}
+  else{ctx.fillStyle='#fff6c8';ell(wx+40,wy+32,13,13);ctx.fillStyle=mix('#141a38','#8fd0f0',dl);ell(wx+46,wy+28,11,11);
+    ctx.fillStyle='#fff';for(let i=0;i<9;i++){const sx=wx+15+((i*53)%140),sy=wy+12+((i*37)%85);ctx.globalAlpha=.5+.5*Math.sin(t*2+i);ctx.fillRect(sx,sy,2,2)}ctx.globalAlpha=1}
+  ctx.strokeStyle='#a07850';ctx.lineWidth=8;ctx.strokeRect(wx,wy,ww,wh);ctx.lineWidth=4;
+  ctx.beginPath();ctx.moveTo(wx+ww/2,wy);ctx.lineTo(wx+ww/2,wy+wh);ctx.moveTo(wx,wy+wh/2);ctx.lineTo(wx+ww,wy+wh/2);ctx.stroke();
+  // floor
+  ctx.fillStyle=mix('#6b5a58','#dcbc8e',dl);ctx.fillRect(0,FLOOR,W,H-FLOOR);
+  for(const b of bedding){ctx.fillStyle=mix(b.c<.5?'#7a6660':'#5e4d4a',b.c<.5?'#ecd3a6':'#c9a571',dl);ell(b.x,b.y,b.r*2,b.r)}
+  // hut
+  ctx.fillStyle=mix('#5a4030','#b9855a',dl);ctx.beginPath();ctx.arc(670,FLOOR+20,80,Math.PI,0);ctx.fill();
+  ctx.fillStyle=mix('#4a3428','#a3734b',dl);for(let i=0;i<5;i++){ctx.fillRect(600+i*28,FLOOR-50+Math.abs(i-2)*8,4,60-Math.abs(i-2)*8)}
+  ctx.fillStyle='#2a1d17';ctx.beginPath();ctx.arc(670,FLOOR+20,34,Math.PI,0);ctx.fill();
+  // bowl
+  ctx.fillStyle='#c0504d';ell(560,FLOOR+10,34,12);ctx.fillStyle='#8a3532';ell(560,FLOOR+4,28,7);
+  ctx.fillStyle='#b98a52';for(let i=0;i<6;i++)ell(545+i*6,FLOOR+2+(i%2)*2,3,2);
+  // wheel
+  const cx=110,cy=FLOOR-78,r=74;
+  ctx.fillStyle='#8a8f99';ctx.fillRect(cx-4,cy,8,78);ctx.fillRect(cx-40,FLOOR-4,80,10);
+  ctx.save();ctx.translate(cx,cy);ctx.rotate(wheelA);
+  ctx.strokeStyle='#6aa6d8';ctx.lineWidth=3;for(let i=0;i<8;i++){ctx.rotate(Math.PI/4);ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(r,0);ctx.stroke()}
+  ctx.restore();
+  ctx.strokeStyle='#4a8cc4';ctx.lineWidth=7;ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.stroke();
+  // poops
+  for(const p of S.poops){ctx.fillStyle='#6b4a2e';ell(p.x,p.y,9,6);ell(p.x,p.y-5,6,4.5);ell(p.x,p.y-9,3.5,3)}
+}
+function draw(t){
+  drawScene(t);
+  const sleep=S.sleeping,curl=sleep||hog.mode==='curl';
+  let x=hog.x,y=FLOOR+8;
+  if(hog.mode==='wheel'){x=110;y=FLOOR-78+74-4}
+  const happy=!sleep&&(S.happy>70||hog.mode==='eat');
+  const sad=!happy&&(S.happy<30||S.health<40||S.hunger<20);
+  ctx.fillStyle='rgba(0,0,0,.15)';if(hog.mode!=='wheel')ell(x,FLOOR+10,70*hog.scale,9*hog.scale);
+  drawHog(x,y,hog.scale,hog.dir,{curl,sleep,t,walk:hog.mode==='wheel'||(hog.mode==='walk'&&hog.wait<=0),step:hog.step,happy,sad,chew:hog.mode==='eat'});
+  // zzz
+  if(sleep){ctx.fillStyle='#8aa4d8';ctx.font='bold 18px sans-serif';for(let i=0;i<3;i++){const p=(t*.5+i/3)%1;ctx.globalAlpha=1-p;ctx.fillText('Z',x+20+p*30,hogTop()-p*40+10);}ctx.globalAlpha=1}
+  // night overlay
+  const dl=daylight();if(dl<1){ctx.fillStyle=`rgba(20,20,60,${(1-dl)*.25})`;ctx.fillRect(0,0,W,H)}
+  // particles
+  ctx.textAlign='center';ctx.textBaseline='middle';
+  for(const p of parts){ctx.globalAlpha=Math.min(1,p.life);ctx.font=`${p.size}px "Segoe UI Emoji",sans-serif`;ctx.fillText(p.e,p.x,p.y)}
+  ctx.globalAlpha=1;
+  // speech bubble
+  if(hog.say&&hog.sayT>0){
+    ctx.font='15px "Microsoft JhengHei",sans-serif';const tw=ctx.measureText(hog.say).width+20;
+    let bx=Math.max(tw/2+6,Math.min(W-tw/2-6,x)),by=(hog.mode==='wheel'?FLOOR-170:hogTop())-28;
+    ctx.globalAlpha=Math.min(1,hog.sayT*2);ctx.fillStyle='#fff';ctx.strokeStyle='#d9c6ad';ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.roundRect(bx-tw/2,by-15,tw,30,12);ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.moveTo(x-6,by+14);ctx.lineTo(x,by+24);ctx.lineTo(x+6,by+14);ctx.fill();
+    ctx.fillStyle='#4a3a2a';ctx.fillText(hog.say,bx,by+1);ctx.globalAlpha=1;
+  }
+  // banner
+  if(banner){ctx.globalAlpha=Math.min(1,banner.life);ctx.fillStyle='rgba(217,130,75,.92)';ctx.beginPath();ctx.roundRect(W/2-200,16,400,48,14);ctx.fill();
+    ctx.fillStyle='#fff';ctx.font='bold 22px "Microsoft JhengHei",sans-serif';ctx.fillText('🎉 '+banner.t,W/2,41);ctx.globalAlpha=1}
+  ctx.textAlign='start';ctx.textBaseline='alphabetic';
+}
+
+// ---------- hog behaviour ----------
+function updateHog(dt){
+  hog.scale+=(STAGES[S.stage].scale-hog.scale)*Math.min(1,dt*1.5);
+  if(hog.sayT>0)hog.sayT-=dt;
+  if(hog.modeT>0){hog.modeT-=dt;if(hog.modeT<=0&&hog.mode!=='walk'){hog.mode='walk';hog.wait=.5}}
+  wheelA+=(hog.mode==='wheel'?6:0)*dt;
+  if(hog.mode==='wheel')hog.step+=dt*22;
+  if(S.sleeping||hog.mode!=='walk')return;
+  if(hog.wait>0){hog.wait-=dt;return}
+  const sp=(S.energy<20?18:40)*(isNight()?1.4:1)*(S.stage===0?.8:1);
+  const d=hog.tx-hog.x;
+  if(Math.abs(d)<3){hog.wait=1+Math.random()*3;hog.tx=210+Math.random()*350}
+  else{hog.dir=Math.sign(d);hog.x+=Math.sign(d)*Math.min(Math.abs(d),sp*dt);hog.step+=dt*sp/5}
+  chatT-=dt;
+  if(chatT<=0){chatT=8+Math.random()*8;
+    const need=S.health<40?'不太舒服…':S.hunger<30?'肚子好餓…':S.clean<30?'身體癢癢的…':S.energy<20?'好睏…':S.happy<30?'好無聊喔…':null;
+    say(need||['嗅嗅…','噗噗～','(東聞西聞)','咕嚕咕嚕～','今天也要長大！'][Math.floor(Math.random()*5)]);
+  }
+}
+
+// ---------- loop ----------
+function catchUp(sec,quiet){
+  sec=Math.min(sec,6*3600);
+  for(let i=0;i<sec;i+=10)tick(Math.min(10,sec-i),true);
+  if(!quiet&&sec>60){const m=Math.round(sec/60);log(`你離開了約 ${m>=60?Math.floor(m/60)+' 小時 '+(m%60)+' 分':m+' 分鐘'}，${S.name} 自己過了一段時間`)}
+}
+let lastT=performance.now(),saveT=0,uiT=0;
+function frame(now){
+  let dt=(now-lastT)/1000;lastT=now;
+  if(dt>1){catchUp(dt);dt=0}
+  if(S.name){tick(dt);updateHog(dt)}
+  for(const p of parts){p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=20*dt;p.life-=dt}
+  parts=parts.filter(p=>p.life>0);
+  if(banner&&(banner.life-=dt)<=0)banner=null;
+  draw(now/1000);
+  if((uiT-=dt)<=0){uiT=.2;updateUI()}
+  if((saveT-=dt)<=0&&S.name){saveT=5;save()}
+  requestAnimationFrame(frame);
+}
+window.addEventListener('beforeunload',()=>{if(S.name)save()});
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&S.name)save()});
+
+// ---------- start ----------
+if(!S.name){
+  $('#modal').classList.add('show');
+  const ok=()=>{S.name=($('#nameIn').value.trim()||'小刺').slice(0,10);$('#modal').classList.remove('show');S.last=Date.now();
+    log(`🦔 歡迎 ${S.name} 來到新家！好好照顧牠，讓牠長大吧`);say('你好！我是'+S.name,4);save()};
+  $('#nameOk').onclick=ok;$('#nameIn').addEventListener('keydown',e=>{if(e.key==='Enter')ok()});
+  setTimeout(()=>$('#nameIn').focus(),50);
+}else{
+  catchUp((Date.now()-S.last)/1000);
+  log(`歡迎回來！${S.name} 正在等你`);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
