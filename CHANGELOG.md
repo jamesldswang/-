@@ -1,5 +1,10 @@
 # 版本紀錄
 
+## v1.0.1 — 2026-11-15
+
+- 新增 Claude Code 維護指南 `.claude/skills/hedgehog-pet-maintainer/SKILL.md`（程式結構、常見修改、測試與發版流程）
+- README 檔案清單加入維護指南
+
 ## v1.0.0 — 2026-11-15
 
 第一個正式版本。
