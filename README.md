@@ -40,3 +40,4 @@
 
 - `index.html` — 整個遊戲
 - `CHANGELOG.md` — 版本紀錄
+- `.claude/skills/hedgehog-pet-maintainer/SKILL.md` — 給 Claude Code 的維護指南
